@@ -29,8 +29,10 @@ func New(serviceDiscoveryClient *servicediscovery.Client, namespaceID string, er
 	}
 }
 
-func (c *Client) Register(_ bus.EventName, _ bus.EventVersion, _ string, _ int) (unregister func() error, err error) {
-	panic("Register has not been supported for AWS ServiceDiscovery. Use AWS::ServiceDiscovery::Service SRV in AWS CloudFormation template.")
+func (c *Client) Register(_ bus.EventName, _ bus.EventVersion, _ string, _ int) (func() error, error) {
+	// Register has not been supported for AWS ServiceDiscovery.
+	// Use AWS::ServiceDiscovery::Service SRV in AWS CloudFormation template.
+	return nil, nil
 }
 
 func (c *Client) Watch(eventName bus.EventName, eventVersion bus.EventVersion, handler func([]bus.PublisherEndpoint)) (func() error, error) {
