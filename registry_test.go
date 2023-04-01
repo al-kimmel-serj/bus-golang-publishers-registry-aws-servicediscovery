@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestClient_Watch(t *testing.T) {
+func TestRegistry_Watch(t *testing.T) {
 	expected := []bus.PublisherEndpoint{
 		"tcp://1.2.3.4:5678",
 		"tcp://4.3.2.1:5555",

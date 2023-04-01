@@ -15,21 +15,21 @@ var (
 	ErrServiceIsNotExist = errors.New("service is not exist")
 )
 
-type Client struct {
+type Registry struct {
 	namespaceID            string
 	serviceDiscoveryClient *servicediscovery.Client
 	errorHandler           func(error)
 }
 
-func New(serviceDiscoveryClient *servicediscovery.Client, namespaceID string, errorHandler func(error)) *Client {
-	return &Client{
+func New(serviceDiscoveryClient *servicediscovery.Client, namespaceID string, errorHandler func(error)) *Registry {
+	return &Registry{
 		namespaceID:            namespaceID,
 		serviceDiscoveryClient: serviceDiscoveryClient,
 		errorHandler:           errorHandler,
 	}
 }
 
-func (c *Client) Register(_ bus.EventName, _ bus.EventVersion, _ string, _ int) (func() error, error) {
+func (c *Registry) Register(_ bus.EventName, _ bus.EventVersion, _ string, _ int) (func() error, error) {
 	// Register has not been supported for AWS ServiceDiscovery.
 	// Use AWS::ServiceDiscovery::Service SRV in AWS CloudFormation template.
 	return func() error {
@@ -37,7 +37,7 @@ func (c *Client) Register(_ bus.EventName, _ bus.EventVersion, _ string, _ int) 
 	}, nil
 }
 
-func (c *Client) Watch(eventName bus.EventName, eventVersion bus.EventVersion, handler func([]bus.PublisherEndpoint)) (func() error, error) {
+func (c *Registry) Watch(eventName bus.EventName, eventVersion bus.EventVersion, handler func([]bus.PublisherEndpoint)) (func() error, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	serviceID, err := c.fetchServiceIDForEvent(ctx, eventName, eventVersion)
@@ -73,7 +73,7 @@ func (c *Client) Watch(eventName bus.EventName, eventVersion bus.EventVersion, h
 	}, nil
 }
 
-func (c *Client) fetchServiceIDForEvent(ctx context.Context, eventName bus.EventName, eventVersion bus.EventVersion) (string, error) {
+func (c *Registry) fetchServiceIDForEvent(ctx context.Context, eventName bus.EventName, eventVersion bus.EventVersion) (string, error) {
 	var (
 		maxResults        int32   = 100
 		nextToken         *string = nil
@@ -111,7 +111,7 @@ func (c *Client) fetchServiceIDForEvent(ctx context.Context, eventName bus.Event
 	return "", ErrServiceIsNotExist
 }
 
-func (c *Client) fetchEndpoints(ctx context.Context, serviceID string, nextToken *string) ([]bus.PublisherEndpoint, error) {
+func (c *Registry) fetchEndpoints(ctx context.Context, serviceID string, nextToken *string) ([]bus.PublisherEndpoint, error) {
 	var maxResults int32 = 100
 
 	resp, err := c.serviceDiscoveryClient.ListInstances(ctx, &servicediscovery.ListInstancesInput{
