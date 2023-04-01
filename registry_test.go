@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/al-kimmel-serj/bus"
+	"github.com/al-kimmel-serj/bus-golang"
 	registry "github.com/al-kimmel-serj/bus-golang-publishers-registry-aws-servicediscovery"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/servicediscovery"

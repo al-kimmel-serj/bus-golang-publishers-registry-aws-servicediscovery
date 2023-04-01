@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/al-kimmel-serj/bus"
+	"github.com/al-kimmel-serj/bus-golang"
 	"github.com/aws/aws-sdk-go-v2/service/servicediscovery"
 	"github.com/aws/aws-sdk-go-v2/service/servicediscovery/types"
 )
