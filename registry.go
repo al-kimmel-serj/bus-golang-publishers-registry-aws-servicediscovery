@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/al-kimmel-serj/bus-golang"
@@ -179,5 +180,5 @@ func (r *Registry) fetchEndpoints(ctx context.Context, serviceID string, nextTok
 }
 
 func buildInstanceID(ipV4 string, port int) string {
-	return fmt.Sprintf("%s:%d", ipV4, port)
+	return fmt.Sprintf("%s-%d", strings.Replace(ipV4, ".", "-", -1), port)
 }
