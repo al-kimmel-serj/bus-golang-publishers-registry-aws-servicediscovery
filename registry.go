@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	ErrServiceIsNotExist = errors.New("service is not exist")
+	ErrServiceDoesNotExist = errors.New("service does not exist")
 )
 
 type Registry struct {
@@ -21,7 +21,11 @@ type Registry struct {
 	errorHandler           func(error)
 }
 
-func New(serviceDiscoveryClient *servicediscovery.Client, namespaceID string, errorHandler func(error)) *Registry {
+func New(
+	serviceDiscoveryClient *servicediscovery.Client,
+	namespaceID string,
+	errorHandler func(error),
+) *Registry {
 	return &Registry{
 		namespaceID:            namespaceID,
 		serviceDiscoveryClient: serviceDiscoveryClient,
@@ -29,18 +33,45 @@ func New(serviceDiscoveryClient *servicediscovery.Client, namespaceID string, er
 	}
 }
 
-func (c *Registry) Register(_ bus.EventName, _ bus.EventVersion, _ string, _ int) (func() error, error) {
-	// Register has not been supported for AWS ServiceDiscovery.
-	// Use AWS::ServiceDiscovery::Service SRV in AWS CloudFormation template.
+func (r *Registry) Register(eventName bus.EventName, eventVersion bus.EventVersion, ipV4 string, port int) (func() error, error) {
+	ctx := context.Background()
+
+	serviceID, err := r.fetchServiceIDForEvent(ctx, eventName, eventVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	instanceID := buildInstanceID(ipV4, port)
+
+	_, err = r.serviceDiscoveryClient.RegisterInstance(ctx, &servicediscovery.RegisterInstanceInput{
+		Attributes: map[string]string{
+			"AWS_INSTANCE_IPV4": ipV4,
+			"AWS_INSTANCE_PORT": fmt.Sprintf("%d", port),
+		},
+		InstanceId: &instanceID,
+		ServiceId:  &serviceID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return func() error {
+		_, err := r.serviceDiscoveryClient.DeregisterInstance(context.Background(), &servicediscovery.DeregisterInstanceInput{
+			InstanceId: &instanceID,
+			ServiceId:  &serviceID,
+		})
+		if err != nil {
+			return err
+		}
+
 		return nil
 	}, nil
 }
 
-func (c *Registry) Watch(eventName bus.EventName, eventVersion bus.EventVersion, handler func([]bus.PublisherEndpoint)) (func() error, error) {
+func (r *Registry) Watch(eventName bus.EventName, eventVersion bus.EventVersion, handler func([]bus.PublisherEndpoint)) (func() error, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	serviceID, err := c.fetchServiceIDForEvent(ctx, eventName, eventVersion)
+	serviceID, err := r.fetchServiceIDForEvent(ctx, eventName, eventVersion)
 	if err != nil {
 		cancel()
 		return nil, err
@@ -49,10 +80,10 @@ func (c *Registry) Watch(eventName bus.EventName, eventVersion bus.EventVersion,
 	ticker := time.NewTicker(30 * time.Second)
 	go func() {
 		for {
-			endpoints, err := c.fetchEndpoints(ctx, serviceID, nil)
+			endpoints, err := r.fetchEndpoints(ctx, serviceID, nil)
 			if err != nil {
-				if c.errorHandler != nil {
-					c.errorHandler(err)
+				if r.errorHandler != nil {
+					r.errorHandler(err)
 				}
 			} else {
 				handler(endpoints)
@@ -73,19 +104,19 @@ func (c *Registry) Watch(eventName bus.EventName, eventVersion bus.EventVersion,
 	}, nil
 }
 
-func (c *Registry) fetchServiceIDForEvent(ctx context.Context, eventName bus.EventName, eventVersion bus.EventVersion) (string, error) {
+func (r *Registry) fetchServiceIDForEvent(ctx context.Context, eventName bus.EventName, eventVersion bus.EventVersion) (string, error) {
 	var (
 		maxResults        int32   = 100
 		nextToken         *string = nil
-		wantedServiceName         = fmt.Sprintf("bus-%s-v%d", eventName, eventVersion)
+		wantedServiceName         = buildServiceName(eventName, eventVersion)
 	)
 
 	for {
-		resp, err := c.serviceDiscoveryClient.ListServices(ctx, &servicediscovery.ListServicesInput{
+		resp, err := r.serviceDiscoveryClient.ListServices(ctx, &servicediscovery.ListServicesInput{
 			Filters: []types.ServiceFilter{
 				{
 					Name:      "NAMESPACE_ID",
-					Values:    []string{c.namespaceID},
+					Values:    []string{r.namespaceID},
 					Condition: "EQ",
 				},
 			},
@@ -108,13 +139,17 @@ func (c *Registry) fetchServiceIDForEvent(ctx context.Context, eventName bus.Eve
 		}
 	}
 
-	return "", ErrServiceIsNotExist
+	return "", ErrServiceDoesNotExist
 }
 
-func (c *Registry) fetchEndpoints(ctx context.Context, serviceID string, nextToken *string) ([]bus.PublisherEndpoint, error) {
+func buildServiceName(eventName bus.EventName, eventVersion bus.EventVersion) string {
+	return fmt.Sprintf("bus-%s-v%d", eventName, eventVersion)
+}
+
+func (r *Registry) fetchEndpoints(ctx context.Context, serviceID string, nextToken *string) ([]bus.PublisherEndpoint, error) {
 	var maxResults int32 = 100
 
-	resp, err := c.serviceDiscoveryClient.ListInstances(ctx, &servicediscovery.ListInstancesInput{
+	resp, err := r.serviceDiscoveryClient.ListInstances(ctx, &servicediscovery.ListInstancesInput{
 		ServiceId:  &serviceID,
 		MaxResults: &maxResults,
 		NextToken:  nextToken,
@@ -133,7 +168,7 @@ func (c *Registry) fetchEndpoints(ctx context.Context, serviceID string, nextTok
 	}
 
 	if resp.NextToken != nil {
-		nextPagesOfEndpoints, err := c.fetchEndpoints(ctx, serviceID, resp.NextToken)
+		nextPagesOfEndpoints, err := r.fetchEndpoints(ctx, serviceID, resp.NextToken)
 		if err != nil {
 			return nil, err
 		}
@@ -141,4 +176,8 @@ func (c *Registry) fetchEndpoints(ctx context.Context, serviceID string, nextTok
 	}
 
 	return endpoints, nil
+}
+
+func buildInstanceID(ipV4 string, port int) string {
+	return fmt.Sprintf("%s:%d", ipV4, port)
 }
